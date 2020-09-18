@@ -1007,10 +1007,10 @@ rtd.registerEffect("trapped_in_prop", "застрял в пропе",
 	callback = function(ply)
 		local prop = rtd.getUserData"prop"
 
-        if not IsValid(prop) then return true end
+		if not IsValid(prop) then return true end
 
-        ply:SetMoveType(MOVETYPE_NONE)
-        ply:SetPos(prop:GetPos())
+		ply:SetMoveType(MOVETYPE_NONE)
+		ply:SetPos(prop:GetPos())
 	end,
 	
 	on_first = function(ply)
