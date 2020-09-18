@@ -1,9 +1,10 @@
-if !SERVER then return end
+if not SERVER then return end
 
 rtd = {}
 rtd.effects = {}
 rtd.hooks = {}
 
+rtd.effect_idx = 0
 rtd.current_ply = nil
 rtd.currect_effect = nil
 rtd.next_effects = {}
@@ -53,12 +54,12 @@ rtd.registerEffectEx = function(id, data)
 	rtd.assert(istable(data), "@data must be a table")
 	rtd.assert(isstring(id), "@id must be a string")
 	
-	rtd.assert(isfunction(data.callback) || isfunction(data.on_first) || isfunction(data.on_end) || (istable(data.hooks) and table.Count(data.hooks) > 0), "no callbacks are set! dummy effect!")
+	rtd.assert(isfunction(data.callback) or isfunction(data.on_first) or isfunction(data.on_end) or (istable(data.hooks) and table.Count(data.hooks) > 0), "no callbacks are set! dummy effect!")
 	
 	rtd.assert(isstring(data.format), "^data.format must be a string")
 	
-	rtd.assert(data.duration == nil || isnumber(data.duration) || istable(data.duration), "^data.duration must be a nil or number or table")
-	rtd.assert(!istable(data.duration) || (isnumber(data.duration.min) && isnumber(data.duration.max)), "^data.duration has wrong table")
+	rtd.assert(data.duration == nil or isnumber(data.duration) or istable(data.duration), "^data.duration must be a nil or number or table")
+	rtd.assert(not istable(data.duration) or (isnumber(data.duration.min) and isnumber(data.duration.max)), "^data.duration has wrong table")
 	
 	if data.callback == nil then data.callback = function() end end
 	rtd.assert(isfunction(data.callback), "@callback must be a function")
@@ -71,7 +72,7 @@ rtd.registerEffectEx = function(id, data)
 	
 	if data.hooks == nil then data.hooks = {} end
 	for k,v in pairs(data.hooks) do
-		rtd.assert(isstring(k) && isfunction(v), "bad @hooks table")
+		rtd.assert(isstring(k) and isfunction(v), "bad @hooks table")
 		rtd.assert(rtd.isHookRegistered(k), "you forgot to register hook "..k)
 	end
 	
@@ -100,7 +101,7 @@ end
 -- function will error if no current rtd is in action
 rtd.setUserData = function(data_name, any)
 	rtd.assert(isstring(data_name), "@data_name must be a string")
-	rtd.assert(any != nil, "@any can't be a nil")
+	rtd.assert(any ~= nil, "@any can't be a nil")
 	
 	rtd.getCurrentEffect()._user_data[data_name] = any
 end
@@ -113,7 +114,7 @@ rtd.getUserData = function(data_name)
 	rtd.assert(isstring(data_name), "@data_name must be a string")
 	rtd.assert(istable(rtd.getCurrentEffect()._user_data), "to devs: you CANT use userdata for functions that called ONCE")
 	
-	rtd.assert(rtd.getCurrentEffect()._user_data[data_name] != nil, "user data ("..data_name..") of the effect is not set!")
+	rtd.assert(rtd.getCurrentEffect()._user_data[data_name] ~= nil, "user data ("..data_name..") of the effect is not set!")
 	
 	return rtd.getCurrentEffect()._user_data[data_name]
 end
@@ -121,7 +122,7 @@ end
 -- return current rtd player
 -- function will error if no current rtd is in action
 rtd.getCurrentPlayer = function()
-	rtd.assert(rtd.current_ply != nil, "no current rtd is in action")
+	rtd.assert(rtd.current_ply ~= nil, "no current rtd is in action")
 	
 	return rtd.current_ply
 end
@@ -129,7 +130,7 @@ end
 -- return current rtd effect
 -- function will error if no current rtd is in action
 rtd.getCurrentEffect = function()
-	rtd.assert(rtd.current_effect != nil, "no current rtd is in action")
+	rtd.assert(rtd.current_effect ~= nil, "no current rtd is in action")
 	
 	return rtd.current_effect
 end
@@ -185,19 +186,39 @@ rtd.registerHook = function(event, verify_fn)
 	rtd.info("Created hook ", event, " with name \"[user] roll the dice\"")
 	hook.Add(event, "[user] roll the dice", function(...)
 		for k,v in pairs(rtd.next_effects) do
-			if !IsValid(v.ply) then continue end
-			if !v.ply:Alive() then continue end
-			if v.end_time < CurTime() then continue end -- effect is about to end
-			
-			rtd.current_effect = v
-			rtd.current_ply = v.ply
-			
-			if verify_fn(v.ply, ...) and isfunction(v.effect.hooks[event]) then
-				v.effect.hooks[event](...)
+			if IsValid(v.ply) then
+				if v.ply:Alive() then
+					if v.end_time >= CurTime() then
+						rtd.current_effect = v
+						rtd.current_ply = v.ply
+
+						local verified
+
+						local success, err = pcall(function(...)
+							verified = verify_fn(v.ply, ...)
+						end, ...)
+
+						if not success then
+							rtd.critical("error while verifying " .. event .. ": " .. err)
+						end
+
+						verified = verified or false
+						
+						if verified and isfunction(v.effect.hooks[event]) then
+							local success, err = pcall(function(...)
+								v.effect.hooks[event](...)
+							end, ...)
+
+							if not success then
+								rtd.critical("error while executing " .. event .. ": " .. err)
+							end
+						end
+						
+						rtd.current_effect = nil
+						rtd.current_ply = nil
+					end
+				end
 			end
-			
-			rtd.current_effect = nil
-			rtd.current_ply = nil
 		end
 	end)
 end
@@ -207,7 +228,7 @@ end
 --
 
 rtd.rollEffect = function(ply, effect)
-	rtd.assert(isentity(ply) && ply:IsPlayer(), "@ply must be a player")
+	rtd.assert(isentity(ply) and ply:IsPlayer(), "@ply must be a player")
 	rtd.assert(istable(effect), "@effect must be a table")
 	
 	if ply.isInRTD then
@@ -228,7 +249,7 @@ rtd.rollEffect = function(ply, effect)
 	local formated_msg = effect.format
 	formated_msg = string.Replace(formated_msg, "%rtd", ply:Nick())
 	
-	if effect_time != nil then
+	if effect_time ~= nil then
 		local sv_effect =
 		{
 			effect = effect,
@@ -239,14 +260,24 @@ rtd.rollEffect = function(ply, effect)
 			
 			_user_data = {}
 		}
+
+		rtd.effect_idx = (rtd.effect_idx + 1) % 65535
+		rtd.next_effects[rtd.effect_idx] = sv_effect
 		
 		rtd.current_ply = ply
-		rtd.current_effect = rtd.next_effects[table.insert(rtd.next_effects, sv_effect)]
+		rtd.current_effect = rtd.next_effects[rtd.effect_idx]
 		
 		formated_msg = string.Replace(formated_msg, "%time", effect_time)
 		
 		ply.isInRTD = true
-		effect.on_first(ply)
+
+		local success, err = pcall(function()
+			effect.on_first(ply)
+		end)
+
+		if not success then
+			rtd.critical("error while executing on_first: " .. err)
+		end
 	else
 		-- setting up dummy sv_effect
 		
@@ -259,7 +290,13 @@ rtd.rollEffect = function(ply, effect)
 		rtd.current_effect = dummy_effect
 		rtd.current_ply = ply
 	
-		effect.callback(ply)
+		local success, err = pcall(function()
+			effect.callback(ply)
+		end)
+		
+		if not success then
+			rtd.critical("error while executing callback: " .. err)
+		end
 	end
 		
 	rtd.current_effect = nil
@@ -276,15 +313,9 @@ end
 hook.Add("Tick", "roll the dice", function()
 	local effect_list = table.Copy(rtd.next_effects)
 	
-	local removed = 0
-	local function remove_effect(k)
-		table.remove(rtd.next_effects, k + removed)
-		removed = removed + 1
-	end
-	
 	for k,v in pairs(effect_list) do
 		if !IsValid(v.ply) then
-			remove_effect(k)
+			rtd.next_effects[k] = nil
 			return
 		end
 		
@@ -295,9 +326,15 @@ hook.Add("Tick", "roll the dice", function()
 		::retry_process_effect::
 		
 		if v.force_stop or !v.ply:Alive() or v.end_time < CurTime() then
-			v.effect.on_end(v.ply, v.start_time)
+			local success, err = pcall(function()
+				v.effect.on_end(v.ply, v.start_time)
+			end)
+
+			if not success then
+				rtd.critical("error while executing on_end: " .. err)
+			end
 			
-			remove_effect(k)
+			rtd.next_effects[k] = nil
 			
 			if !v.ply:Alive() then
 				rtd.printAll(v.ply:Nick().." умер во время эффекта!")
@@ -308,9 +345,18 @@ hook.Add("Tick", "roll the dice", function()
 			rtd.info(v.ply, " effect ", v.effect.id, " is end")
 			v.ply.isInRTD = false
 		else
-			if v.effect.callback(v.ply, v.end_time - v.start_time, v.start_time) == true then
-				force_stop = true
-				goto retry_process_effect
+			local success, err = pcall(function()
+				if v.effect.callback(v.ply, v.end_time - v.start_time, v.start_time) == true then
+					force_stop = true
+				end
+			end)
+
+			if not success then
+				rtd.critical("error while callback effect: " .. err)
+			else
+				if force_stop then
+					goto retry_process_effect
+				end
 			end
 		end
 		
@@ -354,14 +400,15 @@ local function getClosestPlayer(ent)
 	local best_dis = math.huge - 1
 	
 	for k,v in pairs(player.GetAll()) do
-		if v == ent then continue end
-		if !v:Alive() then continue end
-		
-		local dis = ent:GetPos():Distance(v:GetPos())
-		
-		if dis < best_dis then
-			best_tar = v
-			best_dis = dis
+		if v ~= ent then
+			if v:Alive() then
+				local dis = ent:GetPos():Distance(v:GetPos())
+				
+				if dis < best_dis then
+					best_tar = v
+					best_dis = dis
+				end
+			end
 		end
 	end
 	
@@ -452,7 +499,9 @@ rtd.registerEffect("explosive_bullets", "получил взрывчатые п�
 			bullet.Callback = function(attacker, tr, dmg)
 				createExplosion(tr.HitPos, attacker, math.random(10, 100), 200)
 				
-				oldcallback(attacker, tr, dmg)
+				if oldcallback ~= nil then
+					oldcallback(attacker, tr, dmg)
+				end
 			end
 			
 			return true
@@ -503,9 +552,9 @@ rtd.registerEffect("fast_speed", "получает супер скорость",
 		rtd.setUserData("walk_speed", ply:GetWalkSpeed())
 		rtd.setUserData("run_speed", ply:GetRunSpeed())
 		
-		ply:SetSlowWalkSpeed(99999)
-		ply:SetWalkSpeed(99999)
-		ply:SetRunSpeed(99999)
+		ply:SetSlowWalkSpeed(10000)
+		ply:SetWalkSpeed(10000)
+		ply:SetRunSpeed(10000)
 	end,
 	
 	on_end = function(ply)
@@ -680,14 +729,14 @@ rtd.registerEffect("im_scary", "стал страшным",
 	
 	callback = function(ply)
 		for k, v in pairs(player.GetAll()) do
-			if v == ply then continue end
-			
-			if v:GetEyeTrace().Entity == ply then
-				v:ConCommand("say \"страшно...\"")
-				
-				v:SetEyeAngles(v:EyeAngles() + Angle(math.Rand(-10, 10), math.Rand(-10, 10), 0))
-				v:EmitSound("vo/npc/female01/pain0"..math.random(1, 9)..".wav")
-				v:ScreenFade(SCREENFADE.MODULATE, color_black, 0.5, 2)
+			if v ~= ply then
+				if v:GetEyeTrace().Entity == ply then
+					v:ConCommand("say \"страшно...\"")
+					
+					v:SetEyeAngles(v:EyeAngles() + Angle(math.Rand(-10, 10), math.Rand(-10, 10), 0))
+					v:EmitSound("vo/npc/female01/pain0"..math.random(1, 9)..".wav")
+					v:ScreenFade(SCREENFADE.MODULATE, color_black, 0.5, 2)
+				end
 			end
 		end
 	end
@@ -699,12 +748,10 @@ rtd.registerEffect("car_crush", "сбила машина",
 	
 	callback = function(ply)
 		local car = rtd.getUserData"car"
-		
 		if !isentity(car) then return true end
 		
 		local phys = car:GetPhysicsObject()
-		
-		if !phys then return end
+		if !phys then return true end
 		
 		phys:SetVelocity((ply:GetPos() - car:GetPos()) * 10)
 	end,
@@ -727,6 +774,8 @@ rtd.registerEffect("car_crush", "сбила машина",
 	
 	on_end = function()
 		local car = rtd.getUserData"car"
+
+		if not IsValid(car) then return end
 		
 		local wheels =
 		{
@@ -751,10 +800,10 @@ rtd.registerEffect("car_crush", "сбила машина",
 			wheel:Ignite(12, 100)
 			
 			local phys = car:GetPhysicsObject()
-			if !phys then return end
-			
-			phys:SetVelocity(car:GetVelocity())
-			
+			if phys then
+				phys:SetVelocity(car:GetVelocity())
+			end
+
 			timer.Simple(12, function()
 				if IsValid(wheel) then
 					wheel:Remove()
@@ -958,7 +1007,7 @@ rtd.registerEffect("trapped_in_prop", "застрял в пропе",
 	callback = function(ply)
 		local prop = rtd.getUserData"prop"
 
-        if !IsValid(prop) then return true end
+        if not IsValid(prop) then return true end
 
         ply:SetMoveType(MOVETYPE_NONE)
         ply:SetPos(prop:GetPos())
@@ -1091,7 +1140,7 @@ rtd.registerEffect("homing_projectiles", "получил самонаводящ�
 	callback = function(ply)
 		local tar = getClosestPlayer(ply)
 		
-		if !tar then return end
+		if not tar then return end
 		
 		local proj_table = {}
 		
@@ -1145,22 +1194,24 @@ rtd.registerEffect("zombie", "стал зомби",
 			angles.r = 0
 			
 			local best_tar = getClosestPlayer(ply)
-			local dis = best_tar:GetPos():Distance(ply:GetPos())
-			
-			if best_tar and dis < 2000 then
-				local aimang = (best_tar:GetPos() - ply:GetShootPos()):Angle()
+			if best_tar ~= nil then
+				local dis = best_tar:GetPos():Distance(ply:GetPos())
 				
-				angles.p = aimang.p - 25
-				angles.y = aimang.y
-			else
-				angles.p = 0
-			end
-			
-			if ply:GetVelocity():Length() < (ply:GetRunSpeed() / 3) and dis > 300 then
-				angles.y = angles.y + 90
-				
-				if (engine.TickCount() % 16) == 0 then
-					ply:EmitSound("npc/zombie/zo_attack"..math.random(1, 2)..".wav")
+				if best_tar and dis < 2000 then
+					local aimang = (best_tar:GetPos() - ply:GetShootPos()):Angle()
+					
+					angles.p = aimang.p - 25
+					angles.y = aimang.y
+				else
+					angles.p = 0
+				end
+
+				if ply:GetVelocity():Length() < (ply:GetRunSpeed() / 3) and dis > 300 then
+					angles.y = angles.y + 90
+					
+					if (engine.TickCount() % 16) == 0 then
+						ply:EmitSound("npc/zombie/zo_attack"..math.random(1, 2)..".wav")
+					end
 				end
 			end
 			
@@ -1168,7 +1219,7 @@ rtd.registerEffect("zombie", "стал зомби",
 				ply:EmitSound("npc/zombie/zombie_voice_idle"..math.random(1, 14)..".wav")
 			end
 			
-			if (engine.TickCount() % 50) == 0 then
+			if (engine.TickCount() % 150) == 0 then
 				cmd:SetButtons(bit.bor(cmd:GetButtons(), IN_JUMP))
 				cmd:SetButtons(bit.bor(cmd:GetButtons(), IN_DUCK))
 				
@@ -1201,7 +1252,7 @@ end)
 concommand.Add("rtd_set_effect", function(ply, _, args)
 	if !ply:IsAdmin() then return end
 	
-	if args[1] != nil then
+	if args[1] ~= nil then
 		local effect = rtd.effects[args[1]]
 		
 		if !istable(effect) then
