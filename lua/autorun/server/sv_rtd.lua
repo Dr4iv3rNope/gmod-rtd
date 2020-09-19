@@ -1239,6 +1239,82 @@ rtd.registerEffect("zombie", "стал зомби",
 	}
 })
 
+rtd.registerEffect("meteorite", "получает подарок из космоса",
+{
+	duration = 10,
+
+	on_first = function(ply)
+		local top = util.TraceLine({
+			start = ply:GetPos(),
+			endpos = ply:GetPos() + Vector(0, 0, 50000),
+			filter = ply
+		})
+
+		local met = ents.Create("prop_physics")
+		met:SetPos(top.HitPos - Vector(0, 0, 50))
+		met:SetModel("models/props_wasteland/rockgranite04a.mdl")
+		met:SetMaterial("models/props_foliage/tree_deciduous_01a_trunk")
+		met:Spawn()
+
+		met:Ignite(10, 100)
+
+		met:GetPhysicsObject():SetMass(50000)
+
+		local trail = util.SpriteTrail(met, 0, Color(255, 255, 255), true, 100, 1, 5, 1, "trails/smoke")
+
+		rtd.setUserData("trail", trail)
+		rtd.setUserData("met", met)
+	end,
+
+	callback = function(ply)
+		local met = rtd.getUserData"met"
+		if not isentity(met) then return true end
+		
+		local phys = met:GetPhysicsObject()
+		if not phys then return true end
+		
+		phys:ApplyForceOffset(Vector(0, 0, -10000), met:GetPos() + (met:OBBMaxs() * 10))
+		phys:SetVelocity((ply:GetPos() - met:GetPos()) * 100)
+	end,
+	
+	on_end = function(ply)
+		local met = rtd.getUserData"met"
+		if not IsValid(met) then return end
+
+		local CHUNKS_MDL = 
+		{
+			"models/props_wasteland/rockgranite02c.mdl",
+			"models/props_wasteland/rockgranite02b.mdl",
+			"models/props_wasteland/rockgranite02a.mdl",
+			"models/props_wasteland/rockgranite03c.mdl",
+			"models/props_wasteland/rockcliff01k.mdl",
+			"models/props_wasteland/rockcliff01j.mdl",
+			"models/props_wasteland/rockcliff01g.mdl"
+		}
+
+		for i = 1, math.random(8, 20) do
+			local chunk = ents.Create("prop_physics")
+			chunk:SetPos(met:GetPos())
+			chunk:SetModel(table.Random(CHUNKS_MDL))
+			chunk:SetMaterial("models/props_foliage/tree_deciduous_01a_trunk")
+			chunk:Spawn()
+
+			chunk:Ignite(5, 100)
+
+			chunk:GetPhysicsObject():SetVelocity(VectorRand() * 1000)
+
+			timer.Simple(5, function()
+				if IsValid(chunk) then
+					chunk:Remove()
+				end
+			end)
+		end
+
+		createExplosion(met:GetPos(), met, 1000, 300)
+		met:Remove()
+	end
+})
+
 --
 -- You can replace these functions
 --
