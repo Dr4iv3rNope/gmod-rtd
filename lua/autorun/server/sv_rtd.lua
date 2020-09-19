@@ -321,8 +321,7 @@ hook.Add("Tick", "roll the dice", function()
 		
 		rtd.current_effect = v
 		rtd.current_ply = v.ply
-		
-		local force_stop = false
+
 		::retry_process_effect::
 		
 		if v.force_stop or !v.ply:Alive() or v.end_time < CurTime() then
@@ -345,18 +344,16 @@ hook.Add("Tick", "roll the dice", function()
 			rtd.info(v.ply, " effect ", v.effect.id, " is end")
 			v.ply.isInRTD = false
 		else
-			local success, err = pcall(function()
-				if v.effect.callback(v.ply, v.end_time - v.start_time, v.start_time) == true then
-					force_stop = true
-				end
-			end)
-
-			if not success then
+			local success, result = xpcall(v.effect.callback, function(err)
 				rtd.critical("error while callback effect: " .. err)
-			else
-				if force_stop then
-					goto retry_process_effect
-				end
+			end, v.ply, v.end_time - v.start_time, v.start_time)
+			
+			if
+				not success or
+				result == true
+			then
+				v.force_stop = true
+				goto retry_process_effect
 			end
 		end
 		
@@ -1051,6 +1048,7 @@ rtd.registerEffect("trapped_in_prop", "застрял в пропе",
 	end
 })
 
+
 rtd.registerEffect("rand_tp", "телепортировался куда-то",
 {
 	callback = function(ply)
@@ -1247,7 +1245,7 @@ rtd.registerEffect("meteorite", "получает подарок из космо
 		local top = util.TraceLine({
 			start = ply:GetPos(),
 			endpos = ply:GetPos() + Vector(0, 0, 50000),
-			filter = ply
+			mask = MASK_SOLID_BRUSHONLY
 		})
 
 		local met = ents.Create("prop_physics")
