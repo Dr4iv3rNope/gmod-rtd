@@ -811,11 +811,7 @@ rtd.registerEffect("car_crush", "сбила машина",
 				phys:SetVelocity(car:GetVelocity())
 			end
 
-			timer.Simple(12, function()
-				if IsValid(wheel) then
-					wheel:Remove()
-				end
-			end)
+			SafeRemoveEntityDelayed(wheel, 12)
 		end
 
 		car:SetModel(table.Random(dest_cars))
@@ -824,10 +820,9 @@ rtd.registerEffect("car_crush", "сбила машина",
 		createExplosion(car:GetPos(), car, 1000, 300)
 
 		timer.Simple(10, function()
-			if IsValid(car) then
-				createExplosion(car:GetPos(), car, 2000, 500)
-				car:Remove()
-			end
+			createExplosion(car:GetPos(), car, 2000, 500)
+
+			SafeRemoveEntity(car)
 		end)
 	end
 })
