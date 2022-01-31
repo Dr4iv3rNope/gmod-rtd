@@ -484,10 +484,22 @@ end)
 rtd.registerEffect("explosive_bullets", "получил взрывчатые пули",
 {
 	duration = { min = 10, max = 30 },
-	
+
+	on_first = function()
+		rtd.setUserData("ignore_next_bullet", false)
+	end,
+
 	hooks =
 	{
 		["EntityFireBullets"] = function(ply, bullet)
+			if rtd.getUserData"ignore_next_bullet" then
+				rtd.setUserData("ignore_next_bullet", false)
+
+				return
+			end
+
+			rtd.setUserData("ignore_next_bullet", true)
+
 			local oldcallback = bullet.Callback
 			bullet.Callback = function(attacker, tr, dmg)
 				createExplosion(tr.HitPos, attacker, math.random(10, 100), 200)
@@ -496,8 +508,10 @@ rtd.registerEffect("explosive_bullets", "получил взрывчатые п�
 					oldcallback(attacker, tr, dmg)
 				end
 			end
-			
-			return true
+
+			ply:FireBullets(bullet)
+
+			return false
 		end
 	}
 })
