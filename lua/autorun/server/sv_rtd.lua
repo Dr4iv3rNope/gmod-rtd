@@ -1,10 +1,6 @@
-if not SERVER then return end
-
 rtd = {}
 rtd.effects = {}
-rtd.hooks = {}
 
-rtd.effect_idx = 0
 rtd.current_ply = nil
 rtd.currect_effect = nil
 rtd.next_effects = {}
@@ -53,9 +49,9 @@ rtd.next_effects = {}
 rtd.registerEffectEx = function(id, data)
 	rtd.assert(istable(data), "@data must be a table")
 	rtd.assert(isstring(id), "@id must be a string")
-	
-	rtd.assert(isfunction(data.callback) or isfunction(data.on_first) or isfunction(data.on_end) or (istable(data.hooks) and table.Count(data.hooks) > 0), "no callbacks are set! dummy effect!")
-	
+
+	rtd.assert(isfunction(data.callback) or isfunction(data.on_first) or isfunction(data.on_end) or (istable(data.hooks) and next(data.hooks) ~= nil), "no callbacks are set! dummy effect!")
+
 	rtd.assert(isstring(data.format), "^data.format must be a string")
 	
 	rtd.assert(data.duration == nil or isnumber(data.duration) or istable(data.duration), "^data.duration must be a nil or number or table")
@@ -71,8 +67,9 @@ rtd.registerEffectEx = function(id, data)
 	rtd.assert(isfunction(data.on_end), "@onend must be a function")
 	
 	if data.hooks == nil then data.hooks = {} end
-	for k,v in pairs(data.hooks) do
-		rtd.assert(isstring(k) and isfunction(v), "bad @hooks table")
+	for k, v in pairs(data.hooks) do
+		rtd.assert(isstring(k), "keys in @hooks must be a string")
+		rtd.assert(isfunction(v), "expected function in @hooks table (key "..k..")")
 		rtd.assert(rtd.isHookRegistered(k), "you forgot to register hook "..k)
 	end
 	
@@ -102,8 +99,8 @@ end
 rtd.setUserData = function(data_name, any)
 	rtd.assert(isstring(data_name), "@data_name must be a string")
 	rtd.assert(any ~= nil, "@any can't be a nil")
-	
-	rtd.getCurrentEffect()._user_data[data_name] = any
+
+	rtd.getCurrentEffect().user_data[data_name] = any
 end
 
 -- get custom user data for current effect
@@ -112,11 +109,11 @@ end
 -- no data has been set (nil)
 rtd.getUserData = function(data_name)
 	rtd.assert(isstring(data_name), "@data_name must be a string")
-	rtd.assert(istable(rtd.getCurrentEffect()._user_data), "to devs: you CANT use userdata for functions that called ONCE")
-	
-	rtd.assert(rtd.getCurrentEffect()._user_data[data_name] ~= nil, "user data ("..data_name..") of the effect is not set!")
-	
-	return rtd.getCurrentEffect()._user_data[data_name]
+	rtd.assert(istable(rtd.getCurrentEffect().user_data), "to devs: you CANT use userdata for functions that called ONCE")
+
+	rtd.assert(rtd.getCurrentEffect().user_data[data_name] ~= nil, "user data ("..data_name..") of the effect is not set!")
+
+	return rtd.getCurrentEffect().user_data[data_name]
 end
 
 -- return current rtd player
@@ -141,7 +138,7 @@ end
 
 rtd.debug = function(...)
 	MsgC(Color(255, 255, 0), "[RTD] ", ...)
-	MsgN()
+	MsgN("")
 end
 
 rtd.info = function(...)
@@ -154,22 +151,26 @@ end
 
 rtd.critical = function(...)
 	rtd.debug(Color(255, 55, 55), "[Critical Error] ", Color(255, 120, 120), ...)
+
+	rtd.current_ply = nil
+	rtd.currect_effect = nil
+
 	Error(...)
 end
 
 rtd.assert = function(any, ...)
-	if !any then
+	if not any then
 		rtd.critical("Assertation Fault: ", Color(255, 0, 0), ...)
 	end
 end
 
+local USER_HOOK_NAME = "[user] roll the dice"
+
 -- return true if @event already hooked
 rtd.isHookRegistered = function(event)
-	for k,v in pairs(rtd.hooks) do
-		if v.event == event then return true end
-	end
-	
-	return false
+	local callbacks = hook.GetTable()[event]
+
+	return callbacks ~= nil and callbacks[USER_HOOK_NAME] ~= nil
 end
 
 -- registers new hook
@@ -178,14 +179,15 @@ rtd.registerHook = function(event, verify_fn)
 	rtd.assert(isstring(event), "@event must be a string")
 	if verify_fn == nil then verify_fn = function() return true end end
 	rtd.assert(isfunction(verify_fn), "@verify_fn must be a function")
-	
-	if rtd.isHookRegistered(event) then rtd.warning("Hook ", event, " already exist") return end
-	
-	table.insert(rtd.hooks, { event = event, verify = verify_fn })
-	
-	rtd.info("Created hook ", event, " with name \"[user] roll the dice\"")
-	hook.Add(event, "[user] roll the dice", function(...)
-		for k,v in pairs(rtd.next_effects) do
+
+	if rtd.isHookRegistered(event) then
+		rtd.warning("Hook ", event, " already exist. Hook will be overrided!")
+	end
+
+	rtd.info("Created hook ", event, " with name \"" .. USER_HOOK_NAME .. "\"")
+
+	hook.Add(event, USER_HOOK_NAME, function(...)
+		for i,v in ipairs(rtd.next_effects) do
 			if IsValid(v.ply) then
 				if v.ply:Alive() then
 					if v.end_time >= CurTime() then
@@ -257,31 +259,27 @@ rtd.rollEffect = function(ply, effect)
 			start_time = CurTime(),
 			end_time = CurTime() + effect_time,
 			forse_stop = false,
-			
-			_user_data = {}
+			user_data = {}
 		}
 
-		rtd.effect_idx = (rtd.effect_idx + 1) % 65535
-		rtd.next_effects[rtd.effect_idx] = sv_effect
-		
+		table.insert(rtd.next_effects, sv_effect)
+
 		rtd.current_ply = ply
-		rtd.current_effect = rtd.next_effects[rtd.effect_idx]
-		
+		rtd.current_effect = sv_effect
+
 		formated_msg = string.Replace(formated_msg, "%time", effect_time)
 		
 		ply.isInRTD = true
 
-		local success, err = pcall(function()
-			effect.on_first(ply)
-		end)
+		local success, err = pcall(effect.on_first, ply)
 
 		if not success then
 			rtd.critical("error while executing on_first: " .. err)
 		end
 	else
 		-- setting up dummy sv_effect
-		
-		local dummy_effect = 
+
+		local dummy_effect =
 		{
 			effect = effect,
 			ply = ply
@@ -289,11 +287,9 @@ rtd.rollEffect = function(ply, effect)
 	
 		rtd.current_effect = dummy_effect
 		rtd.current_ply = ply
-	
-		local success, err = pcall(function()
-			effect.callback(ply)
-		end)
-		
+
+		local success, err = pcall(effect.callback, ply)
+
 		if not success then
 			rtd.critical("error while executing callback: " .. err)
 		end
@@ -311,31 +307,31 @@ rtd.rollRandomEffect = function(ply)
 end
 
 hook.Add("Tick", "roll the dice", function()
-	local effect_list = table.Copy(rtd.next_effects)
-	
-	for k,v in pairs(effect_list) do
-		if !IsValid(v.ply) then
-			rtd.next_effects[k] = nil
-			return
-		end
-		
+	local removed = 0
+
+	local function removeEffect(i)
+		table.remove(rtd.next_effects, i - removed)
+		removed = removed + 1
+	end
+
+	for i,v in ipairs(rtd.next_effects) do
+		if not IsValid(v.ply) then return removeEffect(i) end
+
 		rtd.current_effect = v
 		rtd.current_ply = v.ply
 
 		::retry_process_effect::
-		
-		if v.force_stop or !v.ply:Alive() or v.end_time < CurTime() then
-			local success, err = pcall(function()
-				v.effect.on_end(v.ply, v.start_time)
-			end)
+
+		if v.force_stop or not v.ply:Alive() or CurTime() > v.end_time then
+			local success, err = pcall(v.effect.on_end, v.ply, v.start_time)
 
 			if not success then
 				rtd.critical("error while executing on_end: " .. err)
 			end
-			
-			rtd.next_effects[k] = nil
-			
-			if !v.ply:Alive() then
+
+			removeEffect(i)
+
+			if not v.ply:Alive() then
 				rtd.printAll(v.ply:Nick().." умер во время эффекта!")
 			else
 				rtd.printAll(v.ply:Nick().." эффект закончен.")
@@ -395,8 +391,8 @@ end
 local function getClosestPlayer(ent)
 	local best_tar = nil
 	local best_dis = math.huge - 1
-	
-	for k,v in pairs(player.GetAll()) do
+
+	for k,v in ipairs(player.GetAll()) do
 		if v ~= ent then
 			if v:Alive() then
 				local dis = ent:GetPos():Distance(v:GetPos())
@@ -725,7 +721,7 @@ rtd.registerEffect("im_scary", "стал страшным",
 	duration = { min = 10, max = 20 },
 	
 	callback = function(ply)
-		for k, v in pairs(player.GetAll()) do
+		for k, v in ipairs(player.GetAll()) do
 			if v ~= ply then
 				if v:GetEyeTrace().Entity == ply then
 					v:ConCommand("say \"страшно...\"")
@@ -745,11 +741,11 @@ rtd.registerEffect("car_crush", "сбила машина",
 	
 	callback = function(ply)
 		local car = rtd.getUserData"car"
-		if !isentity(car) then return true end
-		
+		if not isentity(car) then return true end
+
 		local phys = car:GetPhysicsObject()
-		if !phys then return true end
-		
+		if not phys then return true end
+
 		phys:SetVelocity((ply:GetPos() - car:GetPos()) * 10)
 	end,
 	
@@ -910,9 +906,9 @@ rtd.registerEffect("inf_ammo", "имеет беск. запас патрон",
 
 	callback = function(ply)
 		local weapon = ply:GetActiveWeapon()
-		
-		if !weapon then return end
-		
+
+		if not weapon then return end
+
 		weapon:SetClip1(weapon:GetMaxClip1())
 		weapon:SetClip2(weapon:GetMaxClip2())
 	end
@@ -924,9 +920,9 @@ rtd.registerEffect("fast_hands", "получил быстрые руки",
 	
 	callback = function(ply)
 		local weapon = ply:GetActiveWeapon()
-		
-		if !weapon then return end
-		
+
+		if not weapon then return end
+
 		weapon:SetNextPrimaryFire(CurTime() + 0.05)
 		weapon:SetNextSecondaryFire(CurTime() + 0.05)
 	end
@@ -1041,9 +1037,9 @@ rtd.registerEffect("trapped_in_prop", "застрял в пропе",
 		ply:SetMoveType(rtd.getUserData"movetype")
 		
 		local ent = rtd.getUserData"prop"
-		
-		if !IsValid(ent) then return end
-		
+
+		if not IsValid(ent) then return end
+
 		ent:Remove()
 	end
 })
@@ -1324,17 +1320,17 @@ hook.Add("PlayerSay", "roll the dice", function(ply, text)
 end)
 
 concommand.Add("rtd_set_effect", function(ply, _, args)
-	if !ply:IsAdmin() then return end
-	
+	if not ply:IsAdmin() then return end
+
 	if args[1] ~= nil then
 		local effect = rtd.effects[args[1]]
-		
-		if !istable(effect) then
+
+		if not istable(effect) then
 			ply:PrintMessage(HUD_PRINTCONSOLE, "Effect is not valid")
 			return
 		end
-		
-		if !rtd.rollEffect(ply, effect) then
+
+		if not rtd.rollEffect(ply, effect) then
 			ply:PrintMessage(HUD_PRINTCONSOLE, "Something is gone wrong")
 		else
 			ply:PrintMessage(HUD_PRINTCONSOLE, "OK")
@@ -1345,11 +1341,11 @@ concommand.Add("rtd_set_effect", function(ply, _, args)
 end)
 
 concommand.Add("rtd_print_all_effects", function(ply)
-	if !ply:IsAdmin() then return end
-	
+	if not ply:IsAdmin() then return end
+
 	ply:PrintMessage(HUD_PRINTCONSOLE, "\t\tEffect count: "..#rtd.effects)
-	
-	for k,v in pairs(rtd.effects) do
+
+	for i, v in ipairs(rtd.effects) do
 		ply:PrintMessage(
 			HUD_PRINTCONSOLE,
 			string.format("==> ID: %s <==\n{\n\tFormat: %s", v.id, v.format)
